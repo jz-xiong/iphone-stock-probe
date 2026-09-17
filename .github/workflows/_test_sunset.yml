@@ -1,0 +1,32 @@
+name: test sunset disable
+
+# 一次性测试：验证 workflow 用自身 GITHUB_TOKEN 能否禁用 monitor.yml
+# 需要 actions: write 权限
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Try to disable monitor.yml with GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "--- 当前状态 ---"
+          gh api "repos/${{ github.repository }}/actions/workflows/monitor.yml" \
+            --jq '{id,name,state}'
+          echo "--- 尝试 disable ---"
+          if gh api -X PUT \
+              "repos/${{ github.repository }}/actions/workflows/monitor.yml/disable"; then
+            echo "DISABLE_OK"
+          else
+            echo "DISABLE_FAILED"
+          fi
+          echo "--- disable 后状态 ---"
+          gh api "repos/${{ github.repository }}/actions/workflows/monitor.yml" \
+            --jq '{id,name,state}'
