@@ -2,13 +2,15 @@ name: iPhone stock monitor
 
 on:
   schedule:
-    # 每 10 分钟（GitHub cron 最小粒度 5 分钟，且高峰期可能延迟）
-    - cron: '*/10 * * * *'
+    # 每 5 分钟（GitHub cron 最小粒度即 5 分钟；高峰期可能延迟几分钟）
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
-# 允许把更新后的 json 提交回仓库（网页靠它显示数据）
+# contents: write = 把数据提交回仓库（网页靠它显示）
+# actions:  write = 到期后自行禁用本 workflow
 permissions:
   contents: write
+  actions: write
 
 # 同一时间只跑一个；等前一个跑完
 concurrency:
@@ -21,13 +23,44 @@ jobs:
     timeout-minutes: 8
 
     steps:
+      # ── 到期检查：2026-09-30 为止 ─────────────────────────────
+      # 北京时间 2026-10-01 00:00 == UTC 2026-09-30 16:00
+      - name: Check sunset date
+        id: sunset
+        run: |
+          STOP_UTC="2026-09-30T16:00:00Z"
+          NOW_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "现在(UTC): $NOW_UTC   停止(UTC): $STOP_UTC"
+          if [[ "$NOW_UTC" > "$STOP_UTC" ]]; then
+            echo "expired=true" >> "$GITHUB_OUTPUT"
+            echo "⏹ 已过 2026-09-30，监控停止"
+          else
+            echo "expired=false" >> "$GITHUB_OUTPUT"
+            echo "▶ 监控中"
+          fi
+
+      - name: Disable this workflow (sunset reached)
+        if: steps.sunset.outputs.expired == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X PUT \
+            "repos/${{ github.repository }}/actions/workflows/monitor.yml/disable" \
+            && echo "✅ 已自动禁用本 workflow，定时任务到此结束" \
+            || echo "⚠️ 自动禁用失败，请到 Actions 页面手动 Disable"
+
+      # ── 以下步骤仅在未到期时执行 ──────────────────────────────
       - uses: actions/checkout@v4
+        if: steps.sunset.outputs.expired == 'false'
 
       - uses: actions/setup-python@v5
+        if: steps.sunset.outputs.expired == 'false'
         with:
           python-version: '3.11'
 
       - name: Query Apple retail stock
+        if: steps.sunset.outputs.expired == 'false'
         env:
           WXPUSHER_SPT: ${{ secrets.WXPUSHER_SPT }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
@@ -35,6 +68,7 @@ jobs:
         run: python check_stock.py
 
       - name: Commit data back
+        if: steps.sunset.outputs.expired == 'false'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -45,14 +79,3 @@ jobs:
             git commit -m "stock: $(date -u +%Y-%m-%dT%H:%MZ)"
             git push
           fi
-
-      - name: Enable GitHub Pages (first run only)
-        if: github.event_name == 'workflow_dispatch'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1 \
-            || gh api -X POST "repos/${{ github.repository }}/pages" \
-                 -f "source[branch]=main" -f "source[path]=/docs" \
-                 -f "build_type=legacy" || true
