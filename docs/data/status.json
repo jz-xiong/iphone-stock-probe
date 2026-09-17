@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-09-17T14:09:44+08:00",
+ "updated_at": "2026-09-17T14:10:48+08:00",
  "last_error": null,
  "product": {
   "name": "iPhone 18 Pro Max 512GB 冰川蓝色",
@@ -14,7 +14,7 @@
    "address": "北京市朝阳区三里屯路 19 号院\n三里屯太古里南区 7 号楼",
    "status": "ineligible",
    "is_new": false,
-   "is_lost": true
+   "is_lost": false
   },
   {
    "id": "R448",
