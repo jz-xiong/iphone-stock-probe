@@ -33,24 +33,13 @@ jobs:
           echo "现在(UTC): $NOW_UTC   停止(UTC): $STOP_UTC"
           if [[ "$NOW_UTC" > "$STOP_UTC" ]]; then
             echo "expired=true" >> "$GITHUB_OUTPUT"
-            echo "⏹ 已过 2026-09-30，监控停止"
+            echo "⏹ 已过 2026-09-30，监控结束"
           else
             echo "expired=false" >> "$GITHUB_OUTPUT"
             echo "▶ 监控中"
           fi
 
-      - name: Disable this workflow (sunset reached)
-        if: steps.sunset.outputs.expired == 'true'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api -X PUT \
-            "repos/${{ github.repository }}/actions/workflows/monitor.yml/disable" \
-            && echo "✅ 已自动禁用本 workflow，定时任务到此结束" \
-            || echo "⚠️ 自动禁用失败，请到 Actions 页面手动 Disable"
-
-      # ── 以下步骤仅在未到期时执行 ──────────────────────────────
+      # ── 定时抓取（仅未到期时执行）────────────────────────────
       - uses: actions/checkout@v4
         if: steps.sunset.outputs.expired == 'false'
 
@@ -78,4 +67,79 @@ jobs:
           else
             git commit -m "stock: $(date -u +%Y-%m-%dT%H:%MZ)"
             git push
+          fi
+
+      # ── 到期处置 ─────────────────────────────────────────────
+      # 顺序：先告别推送 → 再禁 workflow → 最后删仓库
+      # 注意：删仓库必须在最后，删掉就没法再跑后续步骤了
+
+      # 1) 告别推送（让你知道任务已结束，不是坏了）
+      - name: Farewell push
+        if: steps.sunset.outputs.expired == 'true'
+        continue-on-error: true
+        env:
+          WXPUSHER_SPT: ${{ secrets.WXPUSHER_SPT }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          spt = (os.environ.get("WXPUSHER_SPT") or "").strip()
+          if not spt:
+              print("未配置 SPT，跳过告别推送")
+              raise SystemExit(0)
+          body = "\n".join([
+              "**iPhone 18 库存监控已到期结束**",
+              "",
+              "按设定日期（2026-09-30），监控任务到此为止。",
+              "仓库随后自动删除，面板链接将失效。",
+          ])
+          req = urllib.request.Request(
+              "https://wxpusher.zjiecode.com/api/send/message/simple-push",
+              data=json.dumps({"spt": spt, "content": body,
+                               "summary": "库存监控已结束", "contentType": 3}).encode(),
+              headers={"Content-Type": "application/json"})
+          try:
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  print("告别推送:", r.read().decode()[:200])
+          except Exception as e:
+              print("告别推送失败:", e)
+          PY
+
+      # 2) 禁用本 workflow
+      #    兜底作用：万一仓库删除失败（未配 PAT），至少定时任务不再跑
+      - name: Disable this workflow
+        if: steps.sunset.outputs.expired == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X PUT \
+            "repos/${{ github.repository }}/actions/workflows/monitor.yml/disable" \
+            && echo "✅ 已禁用本 workflow" || echo "⚠️ 禁用失败"
+
+      # 3) 删除仓库本身
+      #    GITHUB_TOKEN 无权删仓库（实测 403 Resource not accessible by integration），
+      #    必须用细粒度 PAT：仅授权本仓库 + Administration: write
+      - name: Delete this repository
+        if: steps.sunset.outputs.expired == 'true'
+        continue-on-error: true
+        env:
+          DELETE_TOKEN: ${{ secrets.REPO_DELETE_TOKEN }}
+        run: |
+          if [ -z "$DELETE_TOKEN" ]; then
+            echo "⚠️ 未配置 REPO_DELETE_TOKEN，跳过删除仓库"
+            echo "（仓库保留，但定时任务已停用）"
+            exit 0
+          fi
+          echo "正在删除仓库 ${{ github.repository }} ..."
+          CODE=$(curl -s -o /tmp/resp.txt -w "%{http_code}" -X DELETE \
+            -H "Authorization: Bearer $DELETE_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}")
+          echo "HTTP $CODE"
+          if [ "$CODE" = "204" ]; then
+            echo "✅ 仓库已删除，任务彻底结束"
+          else
+            echo "❌ 删除失败，响应："
+            cat /tmp/resp.txt
           fi
