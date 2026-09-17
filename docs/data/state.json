@@ -1,13 +1,13 @@
 {
  "ok": true,
- "last_attempt": "2026-09-18T05:59:01+08:00",
+ "last_attempt": "2026-09-18T06:10:12+08:00",
  "stores": {
-  "R320": "ineligible",
-  "R448": "ineligible",
-  "R479": "ineligible",
-  "R388": "ineligible",
-  "R645": "ineligible",
-  "R792": "ineligible"
+  "R320": "unavailable",
+  "R448": "unavailable",
+  "R479": "unavailable",
+  "R388": "unavailable",
+  "R645": "unavailable",
+  "R792": "unavailable"
  },
  "last_error": null
 }
