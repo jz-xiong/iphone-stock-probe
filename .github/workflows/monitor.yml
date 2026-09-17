@@ -1,0 +1,58 @@
+name: iPhone stock monitor
+
+on:
+  schedule:
+    # 每 10 分钟（GitHub cron 最小粒度 5 分钟，且高峰期可能延迟）
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+# 允许把更新后的 json 提交回仓库（网页靠它显示数据）
+permissions:
+  contents: write
+
+# 同一时间只跑一个；等前一个跑完
+concurrency:
+  group: iphone-stock-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Query Apple retail stock
+        env:
+          WXPUSHER_SPT: ${{ secrets.WXPUSHER_SPT }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+        run: python check_stock.py
+
+      - name: Commit data back
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          if git diff --cached --quiet; then
+            echo "no data change"
+          else
+            git commit -m "stock: $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
+
+      - name: Enable GitHub Pages (first run only)
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1 \
+            || gh api -X POST "repos/${{ github.repository }}/pages" \
+                 -f "source[branch]=main" -f "source[path]=/docs" \
+                 -f "build_type=legacy" || true

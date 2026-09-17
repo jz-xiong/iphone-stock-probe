@@ -1,0 +1,13 @@
+{
+ "ok": true,
+ "last_attempt": "2026-09-17T14:09:44+08:00",
+ "stores": {
+  "R320": "ineligible",
+  "R448": "ineligible",
+  "R479": "ineligible",
+  "R388": "ineligible",
+  "R645": "ineligible",
+  "R792": "ineligible"
+ },
+ "last_error": null
+}
