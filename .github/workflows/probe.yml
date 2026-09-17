@@ -7,16 +7,23 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe Apple CN pickup API
+      - name: Probe - compare US runner vs CN local
         run: |
-          echo "=== runner location ==="
-          curl -s -m 10 https://ipinfo.io/json || echo "ipinfo failed"
-          echo
-          echo "=== Apple CN API ==="
-          curl -s -m 25 -w "\nHTTP_CODE=%{http_code}\n" \
-            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36" \
-            "https://www.apple.com.cn/shop/retail/pickup-message?parts.0=MJYE4CH/A&searchNearby=true&store=R320" \
-            | head -c 1500
-          echo
-          echo "=== DNS ==="
-          getent hosts www.apple.com.cn || echo "dns fail"
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"
+          URL="https://www.apple.com.cn/shop/retail/pickup-message?parts.0=MJYE4CH/A&parts.1=MJY64CH/A&parts.2=MG724CH/A&searchNearby=true&store=R320"
+          curl -s -m 25 -A "$UA" "$URL" -o res.json -w "HTTP=%{http_code}\n"
+          python3 - <<'PY'
+          import json
+          d=json.load(open('res.json'))
+          names={'MJYE4CH/A':'18PM512Glacier','MJY64CH/A':'18PM256Black','MG724CH/A':'iPhone17-512-BLACK'}
+          print("US runner sees:")
+          for s in d['body']['stores']:
+              if s.get('city')!='北京': continue
+              pa=s.get('partsAvailability',{})
+              row=[]
+              for pn in names:
+                  p=pa.get(pn,{})
+                  mt=p.get('messageTypes',{}).get('regular',{})
+                  row.append(f"{pn}={p.get('pickupDisplay')}/enabled={mt.get('storeSearchEnabled')}")
+              print(" ",s['storeNumber'],s['storeName']," | ".join(row))
+          PY
