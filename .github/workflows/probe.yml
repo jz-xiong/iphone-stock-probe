@@ -1,0 +1,22 @@
+name: probe-apple-cn
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe Apple CN pickup API
+        run: |
+          echo "=== runner location ==="
+          curl -s -m 10 https://ipinfo.io/json || echo "ipinfo failed"
+          echo
+          echo "=== Apple CN API ==="
+          curl -s -m 25 -w "\nHTTP_CODE=%{http_code}\n" \
+            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36" \
+            "https://www.apple.com.cn/shop/retail/pickup-message?parts.0=MJYE4CH/A&searchNearby=true&store=R320" \
+            | head -c 1500
+          echo
+          echo "=== DNS ==="
+          getent hosts www.apple.com.cn || echo "dns fail"
