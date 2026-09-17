@@ -1,0 +1,56 @@
+name: test push
+
+# 手动触发：向 WxPusher 发一条测试消息，验证 SPT 与推送链路
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send test push via WxPusher
+        env:
+          WXPUSHER_SPT: ${{ secrets.WXPUSHER_SPT }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          spt = (os.environ.get("WXPUSHER_SPT") or "").strip()
+          print("SPT 存在:", bool(spt), "| 长度:", len(spt), "| 前缀:", spt[:4])
+
+          if not spt:
+              print("SPT 为空 —— 仓库未配置 WXPUSHER_SPT secret")
+              raise SystemExit(1)
+
+          body = "\n".join([
+              "这是一条测试消息，用于验证 iPhone 库存监控的推送链路。",
+              "",
+              "**收到这条消息说明配置成功。**",
+              "以后 iPhone 18 Pro Max 512GB 冰川蓝色在北京门店有货时，",
+              "会第一时间推送到这里。",
+              "",
+              "---",
+              "📊 监控面板：https://jz-xiong.github.io/iphone-stock-probe/",
+          ])
+
+          payload = {
+              "spt": spt,
+              "content": body,
+              "summary": "iPhone 库存监控 · 推送测试",
+              "contentType": 3,   # 3 = Markdown，与 check_stock.py 一致
+          }
+
+          req = urllib.request.Request(
+              "https://wxpusher.zjiecode.com/api/send/message/simple-push",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=25) as r:
+                  print("HTTP:", r.status)
+                  print("响应:", r.read().decode("utf-8", "replace")[:600])
+          except Exception as e:
+              print("发送失败:", type(e).__name__, e)
+              raise SystemExit(1)
+          PY
